@@ -1,2 +1,2 @@
 # hw2
-Base material for homework 2
+Code for homework 2
