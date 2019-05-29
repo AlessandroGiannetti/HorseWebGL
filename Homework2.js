@@ -9,7 +9,7 @@ var i = 0;
 var texSize = 256;
 var numChecks = 16;
 
-var checkBoardText, degradationTex;
+var fragTexType;
 var c;
 
 var projectionMatrix;
@@ -166,18 +166,8 @@ function scale4(a, b, c) {
 }
 
 // =================================================================================
-var image2 = new Uint8Array(4 * texSize * texSize);
-
-for (var i = 0; i < texSize; i++) {
-    for (var j = 0; j < texSize; j++) {
-        image2[4 * i * texSize + 4 * j] = -i;
-        image2[4 * i * texSize + 4 * j + 1] = -i;
-        image2[4 * i * texSize + 4 * j + 2] = -i;
-        image2[4 * i * texSize + 4 * j + 3] = 255;
-    }
-}
-
-var image1 = new Uint8Array(4 * texSize * texSize);
+//checkBoard
+var TcheckBoard = new Uint8Array(4 * texSize * texSize);
 
 for (var i = 0; i < texSize; i++) {
     for (var j = 0; j < texSize; j++) {
@@ -185,31 +175,41 @@ for (var i = 0; i < texSize; i++) {
         var patchy = Math.floor(j / (texSize / numChecks));
         if (patchx % 2 ^ patchy % 2) c = 255;
         else c = 0;
-        //c = 255*(((i & 0x8) == 0) ^ ((j & 0x8)  == 0))
-        image1[4 * i * texSize + 4 * j] = c;
-        image1[4 * i * texSize + 4 * j + 1] = c;
-        image1[4 * i * texSize + 4 * j + 2] = c;
-        image1[4 * i * texSize + 4 * j + 3] = 255;
+
+        TcheckBoard[4 * i * texSize + 4 * j] = c;
+        TcheckBoard[4 * i * texSize + 4 * j + 1] = c;
+        TcheckBoard[4 * i * texSize + 4 * j + 2] = c;
+        TcheckBoard[4 * i * texSize + 4 * j + 3] = 255;
+    }
+}
+//checkBoard + gradation
+var TcheckBoardDegr = new Uint8Array(4 * texSize * texSize);
+
+for (var i = 0; i < texSize; i++) {
+    for (var j = 0; j < texSize; j++) {
+        var patchx = Math.floor(i / (texSize / numChecks));
+        var patchy = Math.floor(j / (texSize / numChecks));
+        if (patchx % 2 ^ patchy % 2) c = 255;
+        else c = 0;
+
+        TcheckBoardDegr[4 * i * texSize + 4 * j] = c*i;
+        TcheckBoardDegr[4 * i * texSize + 4 * j + 1] = c*i;
+        TcheckBoardDegr[4 * i * texSize + 4 * j + 2] = c*i;
+        TcheckBoardDegr[4 * i * texSize + 4 * j + 3] = 255;
     }
 }
 
-function gradationTexture() {
-    degradationTex = gl.createTexture();
-    gl.bindTexture(gl.TEXTURE_2D, degradationTex);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, texSize, texSize, 0, gl.RGBA, gl.UNSIGNED_BYTE, image2);
-    gl.generateMipmap(gl.TEXTURE_2D);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER,
-        gl.NEAREST_MIPMAP_LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-}
-
-function checkBoardTexture() {
-    checkBoardText = gl.createTexture();
-    gl.bindTexture(gl.TEXTURE_2D, checkBoardText);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, texSize, texSize, 0, gl.RGBA, gl.UNSIGNED_BYTE, image1);
-    gl.generateMipmap(gl.TEXTURE_2D);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST_MIPMAP_LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+function configTexture(image) {
+    var texture = gl.createTexture();
+    gl.activeTexture( gl.TEXTURE0 );
+    gl.bindTexture( gl.TEXTURE_2D, texture );
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, texSize, texSize, 0,
+        gl.RGBA, gl.UNSIGNED_BYTE, image);
+    gl.generateMipmap( gl.TEXTURE_2D );
+    gl.texParameteri( gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER,
+        gl.NEAREST_MIPMAP_LINEAR );
+    gl.texParameteri( gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST );
 }
 
 function createNode(transform, render, sibling, child) {
@@ -392,41 +392,31 @@ function traverseObstacle(Id) {
     if (obstacle[Id].sibling != null) traverseObstacle(obstacle[Id].sibling);
 }
 
-function bindCheckBoard() {
-    gl.activeTexture(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D, checkBoardText);
-    gl.uniform1i(gl.getUniformLocation(program, "Tex0"), 0);
-}
-
-function bindDegradation() {
-    gl.activeTexture(gl.TEXTURE1);
-    gl.bindTexture(gl.TEXTURE_2D, degradationTex);
-    gl.uniform1i(gl.getUniformLocation(program, "Tex1"), 1);
-}
-
-function BindTexture() {
-    bindCheckBoard();
-    bindDegradation();
-}
-
 function torso() {
     instanceMatrix = mult(modelViewMatrix, translate(0.0, 0.5 * torsoHeight, 0.0));
     instanceMatrix = mult(instanceMatrix, scale4(torsoWidth, torsoHeight, torsoWidth));
     gl.uniformMatrix4fv(modelViewMatrixLoc, false, flatten(instanceMatrix));
 
-    gl.drawArrays(gl.TRIANGLE_FAN, 12, 4);  // front face of Torso - only checkBoard
-    gradationTexture(); // apply degradation texture for all faces starting from face 0
-    BindTexture();
+   //configTexture(TcheckBoard); // apply degradation texture for all faces starting from face 0
     for (var i = 0; i < 6; i++) {
-        if (i === 2 || i === 3) continue;   // front face and back face managed out of for
-
+        switch(i){
+            case 2: // back of the torso
+                fragTexType = 1;
+                break;
+            case 3: // front of the torso
+                fragTexType = 2;
+                configTexture(TcheckBoard);
+                break;
+            default: // sides of the torso
+                fragTexType = 2;
+                configTexture(TcheckBoardDegr);
+                break;
+        }
+        gl.uniform1i(gl.getUniformLocation(program, "fragTexType"),fragTexType);
         gl.drawArrays(gl.TRIANGLE_FAN, 4 * i, 4);
     }
     // delete texture for all the other elements
-    gl.deleteTexture(checkBoardText);
-    gl.deleteTexture(degradationTex);
-
-    gl.drawArrays(gl.TRIANGLE_FAN, 8, 4);   // back face of Torso - Black
+    gl.uniform1i(gl.getUniformLocation(program, "fragTexType"),1);
 }
 
 function neck() {
@@ -472,6 +462,7 @@ function tail() {
 }
 
 function HorizontalObstacleDown() {
+
     instanceMatrix = mult(modelViewMatrix, translate(0.0, 0.5 * horizontalObstacleHeight, 0.0));
     instanceMatrix = mult(instanceMatrix, scale4(horizontalObstacleWidth, horizontalObstacleHeight, horizontalObstacleWidth));
     gl.uniformMatrix4fv(modelViewMatrixLoc, false, flatten(instanceMatrix));
@@ -479,6 +470,7 @@ function HorizontalObstacleDown() {
 }
 
 function HorizontalObstacleDown2() {
+
     instanceMatrix = mult(modelViewMatrix, translate(0.0, 0.5 * horizontalObstacle2Height, 0.0));
     instanceMatrix = mult(instanceMatrix, scale4(horizontalObstacle2Width, horizontalObstacle2Height, horizontalObstacle2Width));
     gl.uniformMatrix4fv(modelViewMatrixLoc, false, flatten(instanceMatrix));
@@ -486,13 +478,14 @@ function HorizontalObstacleDown2() {
 }
 
 function HorizontalObstacleUp() {
-   checkBoardTexture();
-   bindCheckBoard();
 
+    configTexture(TcheckBoard);
+    gl.uniform1i(gl.getUniformLocation(program, "fragTexType"),fragTexType);
     instanceMatrix = mult(modelViewMatrix, translate(0.0, 0.5 * horizontalObstacleHeight, 0.0));
     instanceMatrix = mult(instanceMatrix, scale4(horizontalObstacleWidth, horizontalObstacleHeight, horizontalObstacleWidth));
     gl.uniformMatrix4fv(modelViewMatrixLoc, false, flatten(instanceMatrix));
     for (var i = 0; i < 6; i++) gl.drawArrays(gl.TRIANGLE_FAN, 4 * i, 4);
+    gl.uniform1i(gl.getUniformLocation(program, "fragTexType"),2);
 }
 
 function VerticalObstacle() {
@@ -525,12 +518,12 @@ function quad(a, b, c, d) {
  *   1 ------- 0
  */
 function cube() {
-    quad(1, 0, 3, 2); // dx face (view from front face)
-    quad(2, 3, 7, 6); // top face
-    quad(3, 0, 4, 7); // back face
+    quad( 3, 2,1, 0,); // bottom face
+    quad( 7, 6,2, 3,); // dx face (view from front face)
+    quad( 4, 7,3, 0,); // back face
     quad(2, 6, 5, 1); // front face
-    quad(6, 7, 4, 5); // sx face (view from front face)
-    quad(5, 4, 0, 1); // bottom face
+    quad( 4, 5,6, 7,); // top face
+    quad( 0, 1,5, 4,); // sx face (view from front face)
 }
 
 window.onload = function init() {
@@ -568,7 +561,6 @@ window.onload = function init() {
 
     cube();
 
-
     vBuffer = gl.createBuffer();
 
     gl.bindBuffer(gl.ARRAY_BUFFER, vBuffer);
@@ -581,7 +573,6 @@ window.onload = function init() {
     var tBuffer = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, tBuffer);
     gl.bufferData(gl.ARRAY_BUFFER, flatten(texCoordsArray), gl.STATIC_DRAW);
-
 
     var vTexCoord = gl.getAttribLocation(program, "vTexCoord");
     gl.vertexAttribPointer(vTexCoord, 2, gl.FLOAT, false, 0, 0);
@@ -655,6 +646,9 @@ function walkingAnimation() {
         if (legsMovementWalking[1] < -20) {
             rotateLegValue_FrontLeft_BackRight = -rotateLegValue_FrontLeft_BackRight;
         }
+
+        //if (headMovement < 15) headMovement -= 1;
+        //else headMovement += 1;
     }
 
 }
@@ -772,8 +766,4 @@ var render = function () {
     traverseHorse(torsoId);
     traverseObstacle(HorizontalObstacle1Id);
     requestAnimFrame(render);
-
-
-
-
 };
